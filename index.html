@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ProgramaCao | Monitoramento</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        /* --- TEMA PADRÃO (CLARO) --- */
+        :root { 
+            --primary: #FF9F43; 
+            --bg-body: #f7f9fc; 
+            --bg-card: #ffffff; 
+            --text-main: #2c3e50; 
+            --text-muted: #8898aa; 
+            --border-radius: 20px; 
+            --logo-cao: #000; 
+        }
+
+        /* --- TEMA ESCURO --- */
+        [data-theme="dark"] { 
+            --bg-body: #121212; 
+            --bg-card: #1e1e1e; 
+            --text-main: #e0e0e0; 
+            --text-muted: #a0a0a0; 
+            --logo-cao: #fff; 
+        }
+
+        body { font-family: 'Nunito', sans-serif; background-color: var(--bg-body); color: var(--text-main); transition: 0.3s; }
+        .app-header { background: var(--bg-card); padding: 15px 0; border-radius: 0 0 20px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        
+        .brand-logo { font-weight: 800; color: var(--primary); font-size: 1.5rem; }
+        .brand-logo span { color: var(--logo-cao); }
+
+        .status-card { background: var(--bg-card); border-radius: var(--border-radius); box-shadow: 0 10px 25px rgba(0,0,0,0.03); overflow: hidden; transition: 0.3s; }
+        
+        /* Tanque Centralizado */
+        .food-gauge-container { 
+            height: 250px; 
+            width: 80px; 
+            background: var(--bg-body); 
+            border: 4px solid var(--bg-card); 
+            border-radius: 15px; 
+            position: relative; 
+            overflow: hidden; 
+            margin: 0 auto; 
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.1); 
+        }
+        .food-liquid { position: absolute; bottom: 0; width: 100%; background: linear-gradient(to top, #FF9F43, #feca57); transition: height 1s; }
+
+        /* Mapa e Elementos */
+        #map { height: 300px; width: 100%; border-radius: 15px; }
+        .info-pill { background: var(--bg-card); border: 1px solid var(--bg-body); border-radius: 12px; padding: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+        .info-value { font-weight: 800; font-size: 1.1rem; }
+        
+        .custom-select { border: none; background: var(--bg-card); padding: 10px 20px; border-radius: 30px; font-weight: 700; width: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); color: var(--text-main); }
+
+        /* Animação Offline */
+        .badge-offline { background-color: #ff5252; color: white; animation: pulse-red 2s infinite; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(255, 82, 82, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); } }
+        
+        .dashboard-dimmed { opacity: 0.5; filter: grayscale(80%); pointer-events: none; transition: 0.5s; }
+        
+        h1, h5, h6 { color: var(--text-main); }
+        .text-muted { color: var(--text-muted) !important; }
+    </style>
+</head>
+<body>
+
+<div class="app-header sticky-top">
+    <div class="container d-flex justify-content-between align-items-center">
+        <div class="brand-logo"><i class="fa-solid fa-paw"></i> Programa<span>Cao</span></div>
+        <div class="d-flex align-items-center gap-3">
+            <div id="liveIndicator" class="badge bg-secondary"><i class="fa-solid fa-wifi"></i> Conectando...</div>
+            <button class="btn btn-sm btn-outline-secondary rounded-pill" onclick="toggleTheme()"><i class="fa-solid fa-moon"></i></button>
+        </div>
+    </div>
+</div>
+
+<div class="container pb-5">
+    <div class="row mb-4">
+        <div class="col-md-6 offset-md-3">
+            <select id="deviceSelect" class="custom-select" onchange="mudarDispositivo()"><option selected disabled>🔍 Buscando...</option></select>
+        </div>
+    </div>
+
+    <div class="row g-4" id="mainDashboard">
+        
+        <div class="col-lg-4">
+            <div class="status-card p-4 text-center h-100 d-flex flex-column justify-content-center">
+                <h5 class="text-muted mb-4">Estoque de Ração</h5>
+                
+                <div class="d-flex flex-column align-items-center justify-content-center w-100">
+                    <div class="food-gauge-container mb-3">
+                        <div id="tankLevel" class="food-liquid" style="height: 0%;"></div>
+                    </div>
+                    <div>
+                        <h1 id="tankText" class="display-4 fw-bold mb-0">--%</h1>
+                        <span id="tankStatusMessage" class="badge bg-secondary mt-2">...</span>
+                    </div>
+                </div>
+
+                <p class="text-muted mt-4 small"><i class="fa-regular fa-clock"></i> <span id="lastUpdate">Calculando...</span></p>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="row mb-4">
+                <div class="col-4">
+                    <div class="info-pill">
+                        <i class="fa-solid fa-temperature-half text-warning"></i>
+                        <div id="tempVal" class="info-value">--°</div>
+                        <div class="text-muted small">Temp</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="info-pill">
+                        <i class="fa-solid fa-droplet text-primary"></i>
+                        <div id="humVal" class="info-value">--%</div>
+                        <div class="text-muted small">Umid</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="info-pill">
+                        <i id="batIcon" class="fa-solid fa-battery-full text-secondary"></i>
+                        <div id="batVal" class="info-value">--%</div>
+                        <div id="batVolt" class="text-muted small" style="font-size: 0.75rem;">--V</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-card p-3">
+                <div class="d-flex justify-content-between align-items-center mb-3 px-2">
+                    <h6 class="fw-bold m-0"><i class="fa-solid fa-location-dot me-2"></i>Localização</h6>
+                    <span id="gpsStatus" class="badge bg-secondary">Verificando...</span>
+                </div>
+                <div id="map"></div>
+                <div class="text-end mt-2"><a id="btnGoogleMaps" href="#" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill disabled">Abrir Maps</a></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+<script>
+    // --- 1. CONFIGURAÇÃO FIREBASE ---
+    const firebaseConfig = {
+        apiKey: "gmIgflB4wyuJ8xP9dXpVqZfTqwJZ04LcVFhgb9ox", 
+        authDomain: "rastreadoresp32-default-rtdb.firebaseapp.com",
+        databaseURL: "https://rastreadoresp32-default-rtdb.firebaseio.com",
+        projectId: "rastreadoresp32-default-rtdb",
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // --- 2. MAPA ---
+    const mapLight = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    const mapDark  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+    
+    var map = L.map('map', { zoomControl: false }).setView([-15.6014, -56.0979], 13);
+    var tileLayer = L.tileLayer(mapLight, { attribution: '© CartoDB' }).addTo(map);
+
+    var customIcon = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
+        iconSize: [38, 38], 
+        iconAnchor: [19, 38], 
+        popupAnchor: [0, -30]
+    });
+    var marker = L.marker([-15.6014, -56.0979], {icon: customIcon}).addTo(map);
+
+    // --- 3. LÓGICA DE TEMPO REAL ---
+    const deviceSelect = document.getElementById('deviceSelect');
+    let currentListener = null;
+    let refreshTimer = null; 
+
+    // Carrega Dispositivos
+    database.ref('dispositivos').once('value', (snapshot) => {
+        deviceSelect.innerHTML = '<option selected disabled>Selecione...</option>';
+        if(snapshot.exists()){
+            snapshot.forEach((child) => {
+                const option = document.createElement('option');
+                option.value = child.key;
+                option.text = "🐾 " + child.key.toUpperCase();
+                deviceSelect.appendChild(option);
+            });
+            const keys = Object.keys(snapshot.val());
+            if(keys.length > 0) { deviceSelect.value = keys[0]; mudarDispositivo(); }
+        }
+    });
+
+    function mudarDispositivo() {
+        const id = deviceSelect.value;
+        if(!id) return;
+        if(currentListener) database.ref(currentListener).off();
+        
+        const path = `dispositivos/${id}`;
+        currentListener = path;
+
+        database.ref(path).on('value', (snap) => {
+            const data = snap.val();
+            if(data) processarDados(data);
+        });
+    }
+
+    function processarDados(data) {
+        if(refreshTimer) clearInterval(refreshTimer);
+        
+        atualizarVisual(data);
+
+        const verificarConexao = () => {
+            const serverDate = data.ultimo_sinal_servidor || data.timestamp; 
+            if(!serverDate) return; 
+
+            const timeMs = new Date(serverDate).getTime();
+            const now = Date.now();
+            const diff = Math.floor((now - timeMs) / 1000); 
+
+            let timeString = diff + "s atrás";
+            if(diff > 60) timeString = Math.floor(diff/60) + " min atrás";
+            if(diff > 3600) timeString = Math.floor(diff/3600) + " horas atrás";
+            
+            const lastUpdateEl = document.getElementById('lastUpdate');
+            lastUpdateEl.innerText = timeString;
+
+            if (diff > 120) {
+                setOfflineMode();
+            } else {
+                setOnlineMode(data);
+            }
+        };
+
+        verificarConexao();
+        refreshTimer = setInterval(verificarConexao, 1000);
+    }
+
+    function setOfflineMode() {
+        const badge = document.getElementById('liveIndicator');
+        badge.className = "badge badge-offline";
+        badge.innerHTML = '<i class="fa-solid fa-plug-circle-xmark"></i> Offline';
+        
+        const gpsBadge = document.getElementById('gpsStatus');
+        gpsBadge.className = "badge bg-danger";
+        gpsBadge.innerHTML = '<i class="fa-solid fa-power-off"></i> Sem Sinal';
+        
+        document.getElementById('mainDashboard').classList.add('dashboard-dimmed');
+    }
+
+    function setOnlineMode(data) {
+        const badge = document.getElementById('liveIndicator');
+        badge.className = "badge bg-success";
+        badge.innerHTML = '<i class="fa-solid fa-wifi"></i> Online';
+        
+        document.getElementById('mainDashboard').classList.remove('dashboard-dimmed');
+
+        const gpsBadge = document.getElementById('gpsStatus');
+        const btnMap = document.getElementById('btnGoogleMaps');
+
+        if(data.lat && data.lat != "0.000000" && data.lat != 0) {
+            gpsBadge.className = "badge bg-success";
+            gpsBadge.innerText = "GPS Ativo";
+            btnMap.classList.remove('disabled');
+            btnMap.href = `https://maps.google.com/?q=${data.lat},${data.lng}`;
+        } else {
+            gpsBadge.className = "badge bg-warning text-dark";
+            gpsBadge.innerText = "Buscando GPS...";
+            btnMap.classList.add('disabled');
+        }
+    }
+
+    function atualizarVisual(data) {
+        // --- SENSORES BÁSICOS ---
+        document.getElementById('tempVal').innerText = (data.temp || '--') + '°';
+        document.getElementById('humVal').innerText = (data.umid || '--') + '%';
+        
+        // --- LÓGICA DA BATERIA (NOVO) ---
+        let batPct = data.bat_pct || 0;
+        let batV = data.bat_v || 0;
+        
+        document.getElementById('batVal').innerText = batPct + '%';
+        document.getElementById('batVolt').innerText = batV + 'V'; // Exibe a tensão
+        
+        // Muda o ícone conforme a carga
+        let batIcon = document.getElementById('batIcon');
+        batIcon.className = "fa-solid"; // Reseta classes
+        
+        if (batPct >= 75) {
+            batIcon.classList.add("fa-battery-full", "text-success");
+        } else if (batPct >= 50) {
+            batIcon.classList.add("fa-battery-three-quarters", "text-success");
+        } else if (batPct >= 25) {
+            batIcon.classList.add("fa-battery-half", "text-warning");
+        } else {
+            batIcon.classList.add("fa-battery-quarter", "text-danger");
+        }
+
+        // --- NÍVEL DO TANQUE ---
+        let nivel = data.nivel || 0;
+        if(nivel > 100) nivel = 100; if(nivel < 0) nivel = 0;
+        
+        document.getElementById('tankLevel').style.height = nivel + '%';
+        document.getElementById('tankText').innerText = Math.round(nivel) + '%';
+        
+        const msgEl = document.getElementById('tankStatusMessage');
+        if(nivel < 20) { msgEl.className = "badge bg-danger mt-2"; msgEl.innerText = "Crítico!"; }
+        else if(nivel < 50) { msgEl.className = "badge bg-warning text-dark mt-2"; msgEl.innerText = "Médio"; }
+        else { msgEl.className = "badge bg-success mt-2"; msgEl.innerText = "Cheio"; }
+
+        // --- MAPA ---
+        if(data.lat && data.lat != "0.000000" && data.lat != 0) {
+            var newLatLng = new L.LatLng(data.lat, data.lng);
+            marker.setLatLng(newLatLng);
+            map.panTo(newLatLng);
+        }
+    }
+
+    // Theme logic
+    function toggleTheme() {
+        const isDark = document.body.getAttribute('data-theme') === 'dark';
+        if(isDark) {
+            document.body.removeAttribute('data-theme');
+            tileLayer.setUrl(mapLight);
+            localStorage.setItem('theme', 'light');
+        } else {
+            document.body.setAttribute('data-theme', 'dark');
+            tileLayer.setUrl(mapDark);
+            localStorage.setItem('theme', 'dark');
+        }
+    }
+    if(localStorage.getItem('theme') === 'dark') toggleTheme();
+</script>
+
+</body>
+</html>
